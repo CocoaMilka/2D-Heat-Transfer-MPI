@@ -2,6 +2,19 @@
 #include <stdlib.h>
 #include <mpi.h>
 
+#define ORANGE "\033[38;5;208m"
+#define RED   "\033[31m"
+#define BLUE  "\033[34m"
+#define GRAY  "\033[90m"
+#define RESET "\033[0m"
+
+void swap(double** a, double** b)
+{
+	double *temp = *b;
+	*b = *a;
+	*a = temp;
+}
+
 int main(int argc, char** argv)
 {
 	MPI_Init(&argc, &argv);
@@ -41,35 +54,81 @@ int main(int argc, char** argv)
 	int block_x = grid_size_x / dims[0];
 	int block_y = grid_size_y / dims[1];
 
+	int local_w = block_x + 2; // Row width including halo
+	int local_h = block_y + 2;
+	
 	// Allocate blocks with halos
-	// | row_0 | ... | row_n | halo_t | ... | halo_r |
-	T_k = malloc((block_x + 2)  * (block_y + 2) * sizeof(double));
+
+	//	HHHHHHH		| H	...	H_n |
+	//	HabcdeH		| H a_0 ... a_n H |
+	//	HfghijH		...
+	//	HklmnoH		...
+	//	HHHHHHH		| H ... H_n |
+
+	T_k = calloc(local_w * local_h, sizeof(double));
+	T_kn = calloc(local_w * local_h, sizeof(double));
 
 	// Initialize array values: index [x, y] = x + y
-	for (int y = 0; y < block_y; y++)
+	
+	for (int y = 1; y <= block_y; y++)
 	{
-		for (int x = 0; x < block_x; x++)
+		for (int x = 1; x <= block_x; x++)
 		{
-			int global_x = coords[0] * block_x + x;
-			int global_y = coords[1] * block_y + y;
+			int global_x = coords[0] * block_x + (x - 1);
+			int global_y = coords[1] * block_y + (y - 1);
 
-			int index = y * block_x + x;
+			int index = y * local_w + x;
 			T_k[index] = global_x + global_y;
 		}
 	}
 
-	/* DEBUG PRINT
-	if (rank == 1)
+	// Process neighbors
+	int up, down, left, right;	// dim[0] = rows ; dim[1] = columns
+	//MPI_Cart_shift(cart, 0, 1, &up, &down);
+	//MPI_Cart_shift(cart, 1, 1, &left, &right);
+
+	/*
+	// Compute
+	for (int k = 0; k < num_time_steps; k++)
 	{
-		for (int i = 0; i < block_y; i++)
+		// Sync borders
+		
+
+		for (int y = 0; y < block_y; y++)
+			for (int x = 0; x < block_x; x++)
+			{
+				int i = block_x * y + x; // index in 1d array of x,y
+				
+				int i_left = x != 0 ? i - 1 : i + 1;
+				//int i_right = 
+			}
+		swap(&T_k, &T_kn);
+	}
+	*/
+
+	/*
+	if (rank == 0)
+	{
+		for (int y = 0; y < local_h; y++)
 		{
 			printf("\n");
-			for (int j = 0; j < block_x; j++)
-				printf(" %6.2f ", T_k[i * block_x + j]);
+			for (int x = 0; x < local_w; x++)
+			{
+				double v = T_k[y * local_w + x];
+
+				if (x == 0 || y == 0 || x == local_w - 1 || y == local_h - 1)
+					printf(ORANGE " %6.2f " RESET, v);
+				else
+					printf(" %6.2f ", v);
+			}
 		}
 	}
 	*/
 
+	MPI_Barrier(cart);
+	
+	free(T_k);
+	free(T_kn);
 
 	MPI_Comm_free(&cart);
 	MPI_Finalize();
